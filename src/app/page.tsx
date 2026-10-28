@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useApp } from "@/components/AppProvider";
 import { DevPanel, PresenceNotice, StoreChip } from "@/components/Presence";
-import { Wordmark } from "@/components/ui";
+import { MealPhoto, Wordmark } from "@/components/ui";
 
 export default function Home() {
   const { config, presence } = useApp();
@@ -15,13 +15,16 @@ export default function Home() {
         <Wordmark />
       </header>
 
-      <section className="mt-6 -rotate-2 rounded-3xl bg-flame p-5 shadow-[0_8px_0_var(--color-flame-dark)]">
+      <section className="mt-6 -rotate-2 overflow-hidden rounded-3xl bg-flame shadow-[0_8px_0_var(--color-flame-dark)]">
+        <MealPhoto className="aspect-[16/10] bg-ink" />
+        <div className="p-5">
         <p className="font-display text-sm uppercase tracking-widest text-sun">In-store only · 10 min deal</p>
         <h1 className="font-display text-4xl uppercase leading-none">{config?.dealTitle ?? "Two Is Better"}</h1>
         <p className="mt-2 text-lg">
           {config?.dealItems ?? "2 Big Johns"} for <strong className="font-display text-sun">{config?.price ?? "…"}</strong>
         </p>
         <p className="mt-1 text-sm text-cream/80">Sync phones with a friend in the store and you both unlock it.</p>
+        </div>
       </section>
 
       <div className="mt-6 flex flex-col items-center gap-4">

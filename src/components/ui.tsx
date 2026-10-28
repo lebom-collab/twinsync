@@ -1,14 +1,38 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import type { ComponentProps, ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
-/** Placeholder wordmark. Swap for real brand artwork later. */
+/** Round brand logo. The source PNG has a white square background, so clip it to a circle. */
+export function BrandLogo({ size, className = "" }: { size: number; className?: string }) {
+  return <Image src="/brand/logo.png" alt="Chicken Licken" width={size} height={size} priority className={`rounded-full ${className}`} />;
+}
+
+/**
+ * Promo meal photo from public/brand/meal.png. Renders nothing if the file
+ * is missing, so the layout still works without it.
+ */
+export function MealPhoto({ className = "" }: { className?: string }) {
+  const [missing, setMissing] = useState(false);
+  const ref = useRef<HTMLImageElement>(null);
+  // onError can fire before hydration, so also check once mounted.
+  useEffect(() => {
+    const img = ref.current;
+    if (img?.complete && img.naturalWidth === 0) setMissing(true);
+  }, []);
+  if (missing) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img ref={ref} src="/brand/meal.png" alt="Big John meal" onError={() => setMissing(true)} className={`w-full object-cover ${className}`} />
+  );
+}
+
 export function Wordmark({ small = false }: { small?: boolean }) {
   return (
-    <div className={`inline-flex -rotate-3 flex-col items-start ${small ? "scale-75 origin-left" : ""}`}>
-      <span className="bg-sun px-2 py-0.5 font-display text-xs uppercase tracking-widest text-ink">[Brand logo]</span>
-      <span className="font-display text-4xl uppercase leading-none text-cream">
+    <div className="inline-flex items-center gap-3">
+      <BrandLogo size={small ? 44 : 64} className="shrink-0 shadow-lg" />
+      <span className={`-rotate-3 font-display uppercase leading-none text-cream ${small ? "text-2xl" : "text-4xl"}`}>
         Twin <span className="text-flame">Sync</span>
       </span>
     </div>

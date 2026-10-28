@@ -4,7 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { CountdownRing, formatClock, useRemainingMs } from "@/components/Countdown";
 import { QrImage } from "@/components/QrImage";
-import { Header, LinkButton, Notice, Spinner } from "@/components/ui";
+import { BrandLogo, Header, MealPhoto, LinkButton, Notice, Spinner } from "@/components/ui";
 
 interface Voucher {
   id: string;
@@ -98,7 +98,8 @@ function VoucherCard({ voucher, onExpire }: { voucher: Voucher; onExpire: () => 
 
   return (
     <div className="mt-4 flex flex-col items-center gap-5 pb-4">
-      <section className={`relative w-full overflow-hidden rounded-3xl p-5 text-center ${active ? "bg-flame" : "bg-ash"}`}>
+      <section className={`relative w-full overflow-hidden rounded-3xl pb-5 text-center ${active ? "bg-flame" : "bg-ash"}`}>
+        <MealPhoto className={`mb-4 aspect-[16/9] bg-ink ${active ? "" : "opacity-25 grayscale"}`} />
         <p className="font-display text-sm uppercase tracking-widest text-sun">{voucher.storeName}</p>
         <h1 className={`font-display text-4xl uppercase leading-none ${active ? "" : "opacity-25"}`}>{title}</h1>
         <p className={`mt-1 text-lg ${active ? "" : "opacity-25"}`}>
@@ -159,6 +160,9 @@ function Unlock({ onDone }: { onDone: () => void }) {
 
   return (
     <button onClick={onDone} aria-label="Continue to voucher" className="stripes fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-ink">
+      <div className="animate-pop-in">
+        <BrandLogo size={96} className="shadow-2xl" />
+      </div>
       <div className="flex items-center gap-2">
         <Half className="animate-slide-left bg-sun text-ink" label="Big John" />
         <Half className="animate-slide-right bg-flame text-cream" label="Big John" />
