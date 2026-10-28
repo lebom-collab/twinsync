@@ -3,6 +3,8 @@ import { getSessionStatus } from "@/lib/services/syncService";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Streams close when the 60s session ends; leave headroom on serverless hosts.
+export const maxDuration = 120;
 
 /**
  * Server-Sent Events: tells Phone A the moment Phone B joins.

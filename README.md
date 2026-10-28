@@ -102,6 +102,37 @@ For a real GPS test, set the coordinates of one demo store in `prisma/seed.ts` t
 
 ---
 
+## Deploying (Vercel + Neon Postgres)
+
+Hosts like Vercel don't keep files between requests, so production uses Postgres. You don't change any code: `npm run build` (`scripts/build.mjs`) checks `DATABASE_URL`. If it's a Postgres URL, the build:
+1. derives `prisma/schema.postgres.prisma` from the SQLite schema
+2. generates the client from it
+3. pushes the tables
+4. seeds the demo stores
+
+Local dev stays on SQLite.
+
+1. **Create the project.** On [vercel.com](https://vercel.com), sign in with GitHub, then **Add New → Project**, import `lebom-collab/twinsync`, and leave the build settings at their defaults.
+2. **Add a database.** Before the first deploy (or straight after, if it fails), open the project's **Storage** tab and choose **Create Database → Neon (Postgres)**. Connect it to the project. This sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED` for you.
+3. **Set environment variables** under **Settings → Environment Variables**:
+
+   | Var | Value |
+   |---|---|
+   | `STAFF_PIN` | a new PIN (not `1234`) |
+   | `COOKIE_SECRET` | a long random string, e.g. from `openssl rand -base64 32` |
+   | `DEV_MODE` | `true` for desk and phone demos (store picker), `false` for a real in-store pilot |
+   | `DEAL_PRICE_CENTS`, `DEAL_TITLE`, `DEAL_ITEMS` | optional, the defaults are R59.90 / Two Is Better / 2 Big Johns |
+
+4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**. You get a permanent `https://<project>.vercel.app` link with HTTPS, so the camera and GPS work on phones.
+
+Every push to `main` redeploys. To move the demo stores, edit `prisma/seed.ts` and push; the seed upserts on each deploy.
+
+**Serverless caveats:**
+- The staff PIN lockout counter lives in memory, so it resets per instance.
+- The SSE stream polls the database every second per waiting phone. That's fine for a pilot; use Postgres LISTEN/NOTIFY or Redis at scale.
+
+---
+
 ## How it works
 
 ```
@@ -205,6 +236,6 @@ A React Native / Expo app (dev client, not Expo Go) would add providers against 
 ## Swapping in brand assets
 
 - **Colours:** the `@theme` tokens in `src/app/globals.css`.
-- **Wordmark and logo:** `Wordmark` in `src/components/ui.tsx`.
-- **Product art:** `Half` in `src/app/voucher/[id]/page.tsx`.
-- **App icon:** `src/app/pwa-icon/[size]/route.tsx`.
+- **Logo:** `public/brand/logo.png`. It's used by `BrandLogo`/`Wordmark` in `src/components/ui.tsx`, the unlock screen, the favicon (`src/app/icon.png`, `apple-icon.png`) and the PWA icon route. A larger PNG or an SVG would sharpen the 512 px icon.
+- **Meal photo:** `public/brand/meal.png`, shown on the home and voucher cards. Leave it out and the cards simply skip the photo.
+- **Unlock-screen product shapes:** `Half` in `src/app/voucher/[id]/page.tsx`.

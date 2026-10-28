@@ -67,10 +67,22 @@ export async function joinSession({ deviceId, storeId, token, shortCode, now = n
   if (problem) throw new SyncError(problem);
   const s = session!;
 
+  try {
+    return await claimAndIssue(s, deviceId, now);
+  } catch (e) {
+    // Serializable conflict: another join touched the same rows at the same
+    // moment (Postgres). The other one won; report it as used.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") throw new SyncError("TOKEN_USED");
+    throw e;
+  }
+}
+
+function claimAndIssue(s: { id: string; storeId: string; initiatorDeviceId: string }, deviceId: string, now: Date) {
+  // Serializable so the daily-limit counts below can't race a concurrent
+  // join by the same device on Postgres (SQLite is serializable anyway).
   return prisma.$transaction(async (tx) => {
     // Atomic claim: only one joiner can flip PENDING -> PAIRED, and only
-    // while unexpired. This also takes SQLite's write lock, so the limit
-    // counts below can't race another join.
+    // while unexpired.
     const claimed = await tx.syncSession.updateMany({
       where: { id: s.id, status: "PENDING", joinerDeviceId: null, expiresAt: { gt: now } },
       data: { status: "PAIRED", joinerDeviceId: deviceId, pairedAt: now },
@@ -99,7 +111,7 @@ export async function joinSession({ deviceId, storeId, token, shortCode, now = n
     const initiatorVoucher = await make(s.initiatorDeviceId);
     const joinerVoucher = await make(deviceId);
     return { sessionId: s.id, initiatorVoucher, joinerVoucher };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 /** Status for Phone A's waiting screen. Only the two participants may look. */
