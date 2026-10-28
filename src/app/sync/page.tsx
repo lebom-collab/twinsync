@@ -38,8 +38,8 @@ function SyncFlow() {
   const { config, presence } = useApp();
   const [mode, setMode] = useState<Mode>(() => {
     // Opened from the QR via the phone's own camera app.
-    const t = params.get("t");
-    if (t) return { kind: "joining", cred: { token: t } };
+    const q = params.get("q");
+    if (q) return { kind: "joining", cred: { qr: q } };
     // Opened by tapping a counter NFC tag (works on iPhone too, via background tag reading).
     const nfc = parseCounterTag(typeof window !== "undefined" ? window.location.href : "");
     if (nfc) return { kind: "code", nfc };
@@ -80,6 +80,7 @@ function SyncFlow() {
 }
 
 function Choose({ onPick }: { onPick: (m: Mode) => void }) {
+  const { config } = useApp();
   const [available, setAvailable] = useState<SyncMethod[]>([]);
   useEffect(() => {
     Promise.all(syncProviders.map(async (p) => ((await p.isAvailable()) ? p.id : null))).then((ids) => setAvailable(ids.filter(Boolean) as SyncMethod[]));
@@ -88,21 +89,24 @@ function Choose({ onPick }: { onPick: (m: Mode) => void }) {
   return (
     <>
       <h1 className="text-center font-display text-3xl uppercase">Who&apos;s who?</h1>
-      <p className="-mt-2 text-center text-cream/70">One of you shows a code, the other scans it.</p>
+      <p className="-mt-2 text-center text-cream/70">Stand together. One of you shows a code, the other scans it.</p>
       <Button onClick={() => onPick({ kind: "host" })} className="min-h-24 text-2xl">
         📱 Show my code
       </Button>
       <Button variant="flame" onClick={() => onPick({ kind: "scan" })} className="min-h-24 text-2xl">
         📷 Scan twin&apos;s code
       </Button>
-      {available.includes("nfc-tag") && (
+      {/* The NFC tag proves the store, not that the twins are together. */}
+      {available.includes("nfc-tag") && config?.proximityMode === "store" && (
         <Button variant="ghost" onClick={() => onPick({ kind: "nfc" })}>
           📶 Tap counter NFC tag
         </Button>
       )}
-      <button onClick={() => onPick({ kind: "code" })} className="py-3 text-center text-sm text-cream/70 underline underline-offset-4">
-        Type your twin&apos;s code instead
-      </button>
+      {config?.allowTypedCode && (
+        <button onClick={() => onPick({ kind: "code" })} className="py-3 text-center text-sm text-cream/70 underline underline-offset-4">
+          Type your twin&apos;s code instead{config.proximityMode === "twins" ? " (dev mode)" : ""}
+        </button>
+      )}
     </>
   );
 }
@@ -143,10 +147,11 @@ function Host({ proof, onCancel }: { proof: PresenceProof; onCancel: () => void 
   useEffect(() => {
     if (!session) return;
     return watchPairing(session.sessionId, (u) => {
+      if (u.status === "PENDING" && u.qr) setSession((s) => (s && s.qr !== u.qr ? { ...s, qr: u.qr! } : s));
       if (u.status === "PAIRED" && u.voucherId) router.replace(`/voucher/${u.voucherId}?new=1`);
       else if (u.status === "EXPIRED" || u.status === "NOT_FOUND") setExpired(true);
     });
-  }, [session, router]);
+  }, [session?.sessionId, router]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) return <SyncErrorNotice code={error} action={<Button variant="ghost" onClick={onCancel}>Back</Button>} />;
   if (!session) return <Spinner label="Making your code…" />;
@@ -160,6 +165,7 @@ function Host({ proof, onCancel }: { proof: PresenceProof; onCancel: () => void 
 }
 
 function HostCode({ session, onExpire, onCancel }: { session: HostSession; onExpire: () => void; onCancel: () => void }) {
+  const { config } = useApp();
   const left = useRemainingMs(session.expiresAt, session.serverNow);
   const total = new Date(session.expiresAt).getTime() - new Date(session.serverNow).getTime();
   useEffect(() => {
@@ -169,13 +175,16 @@ function HostCode({ session, onExpire, onCancel }: { session: HostSession; onExp
   return (
     <div className="flex flex-col items-center gap-4">
       <h1 className="text-center font-display text-3xl uppercase">Twin, scan me!</h1>
-      <QrImage value={qrPayloadFor(session.token)} size={240} label="Twin Sync pairing code" />
-      <div className="text-center">
-        <div className="text-xs uppercase tracking-widest text-cream/60">or type</div>
-        <div className="font-mono text-4xl font-bold tracking-[0.3em] text-sun" aria-label={`Code ${session.shortCode.split("").join(" ")}`}>
-          {session.shortCode}
+      <QrImage value={qrPayloadFor(session.qr)} size={240} label="Twin Sync pairing code" />
+      <p className="-mt-1 text-center text-sm text-cream/70">Hold your phones together. The code refreshes every few seconds, so it only works live.</p>
+      {config?.allowTypedCode && (
+        <div className="text-center">
+          <div className="text-xs uppercase tracking-widest text-cream/60">or type</div>
+          <div className="font-mono text-4xl font-bold tracking-[0.3em] text-sun" aria-label={`Code ${session.shortCode.split("").join(" ")}`}>
+            {session.shortCode}
+          </div>
         </div>
-      </div>
+      )}
       <div className="flex w-full items-center gap-3">
         <div className="h-4 flex-1 overflow-hidden rounded-full bg-ash">
           <div className={`h-full rounded-full transition-[width] duration-300 ${left < 15_000 ? "bg-flame" : "bg-sun"}`} style={{ width: `${(left / total) * 100}%` }} />
@@ -195,6 +204,8 @@ function HostCode({ session, onExpire, onCancel }: { session: HostSession; onExp
 /* ---------------- Phone B ---------------- */
 
 function Scan({ onCredential, onTypeCode, onCancel }: { onCredential: (c: JoinCredential) => void; onTypeCode: () => void; onCancel: () => void }) {
+  const { config } = useApp();
+  const canType = !!config?.allowTypedCode;
   const [error, setError] = useState<SyncChannelError | null>(null);
   const onCredentialRef = useRef(onCredential);
   onCredentialRef.current = onCredential;
@@ -215,12 +226,16 @@ function Scan({ onCredential, onTypeCode, onCancel }: { onCredential: (c: JoinCr
   if (error) {
     const denied = error.code === "PERMISSION_DENIED";
     return (
-      <Notice emoji="📷" title={denied ? "Camera is off" : "Can't open the camera"} action={<Button onClick={onTypeCode}>Type the code instead</Button>}>
+      <Notice
+        emoji="📷"
+        title={denied ? "Camera is off" : "Can't open the camera"}
+        action={canType ? <Button onClick={onTypeCode}>Type the code instead</Button> : <Button variant="ghost" onClick={onCancel}>Back</Button>}
+      >
         {denied
-          ? "Allow camera access for this site in your browser settings to scan — or just type the 6-letter code on your twin's screen."
+          ? "Allow camera access for this site in your browser settings, then scan your twin's screen."
           : error.code === "NO_DEVICE"
-            ? "We couldn't find a camera. Type the 6-letter code on your twin's screen instead."
-            : "Your browser blocked the camera (it needs HTTPS). Type the 6-letter code on your twin's screen instead."}
+            ? "We couldn't find a camera on this phone. Swap roles: you show the code and your twin scans it."
+            : "Your browser blocked the camera (it needs HTTPS). Open the https:// link, or swap roles so your twin scans you."}
       </Notice>
     );
   }
@@ -232,9 +247,11 @@ function Scan({ onCredential, onTypeCode, onCancel }: { onCredential: (c: JoinCr
         <div id="qr-reader" className="h-full w-full" />
       </div>
       <p className="text-center text-cream/70">Point at the code on your twin&apos;s phone.</p>
-      <Button variant="ghost" onClick={onTypeCode}>
-        Type code instead
-      </Button>
+      {canType && (
+        <Button variant="ghost" onClick={onTypeCode}>
+          Type code instead
+        </Button>
+      )}
       <button onClick={onCancel} className="text-sm text-cream/60 underline">
         Cancel
       </button>

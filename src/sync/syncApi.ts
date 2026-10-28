@@ -21,7 +21,7 @@ export async function postJson<T>(url: string, body: unknown): Promise<T> {
 
 export interface HostSession {
   sessionId: string;
-  token: string;
+  qr: string; // current rotating frame; fresh ones arrive via watchPairing
   shortCode: string;
   storeName: string;
   expiresAt: string;
@@ -35,23 +35,24 @@ export const joinSession = (proof: PresenceProof, cred: JoinCredential) =>
   postJson<{ voucherId: string }>("/api/sync/join", { ...proof, ...cred });
 
 /** The QR payload is a URL so a phone's native camera app can open it too. */
-export function qrPayloadFor(token: string): string {
-  return `${window.location.origin}/sync?t=${encodeURIComponent(token)}`;
+export function qrPayloadFor(frame: string): string {
+  return `${window.location.origin}/sync?q=${encodeURIComponent(frame)}`;
 }
 
-export function tokenFromQrPayload(text: string): string | null {
+export function frameFromQrPayload(text: string): string | null {
   try {
     const url = new URL(text);
-    return url.pathname === "/sync" ? url.searchParams.get("t") : null;
+    return url.pathname === "/sync" ? url.searchParams.get("q") : null;
   } catch {
     return null;
   }
 }
 
-export type PairUpdate = { status: "PENDING" | "PAIRED" | "EXPIRED" | "NOT_FOUND"; voucherId?: string | null };
+export type PairUpdate = { status: "PENDING" | "PAIRED" | "EXPIRED" | "NOT_FOUND"; voucherId?: string | null; qr?: string | null };
 
 /**
- * Phone A: wait for Phone B. Uses Server-Sent Events, falling back to
+ * Phone A: wait for Phone B, receiving a fresh QR frame each rotation.
+ * Uses Server-Sent Events, falling back to
  * polling every 2s if the stream errors (some proxies buffer SSE).
  */
 export function watchPairing(sessionId: string, onUpdate: (u: PairUpdate) => void): () => void {

@@ -8,6 +8,8 @@ export interface AppConfig {
   dealItems: string;
   price: string;
   devMode: boolean;
+  proximityMode: "twins" | "store";
+  allowTypedCode: boolean;
   devStores: { id: string; name: string }[];
 }
 
@@ -60,7 +62,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           } catch {}
         }
       })
-      .catch(() => setConfig({ dealTitle: "Two Is Better", dealItems: "", price: "", devMode: false, devStores: [] }));
+      .catch(() => setConfig({ dealTitle: "Two Is Better", dealItems: "", price: "", devMode: false, proximityMode: "twins", allowTypedCode: false, devStores: [] }));
   }, []);
 
   useEffect(() => {

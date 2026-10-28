@@ -9,6 +9,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: "file:./test.db",
       DEV_MODE: "false",
+      PROXIMITY_MODE: "store",
       MAX_DEALS_PER_DEVICE_PER_DAY: "1",
       SYNC_TOKEN_TTL_SECONDS: "60",
       VOUCHER_TTL_SECONDS: "600",

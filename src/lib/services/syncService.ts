@@ -3,7 +3,9 @@ import { newShortCode, newSyncToken, newVoucherCode, normaliseCode } from "../co
 import { config } from "../config";
 import { prisma } from "../db";
 import { SyncError } from "../errors";
-import { checkJoin, hasReachedDailyLimit, isExpired, startOfDayInZone } from "../rules";
+import type { LatLng } from "../geo";
+import { makeQrFrame, parseQrFrame, verifyQrFrameSig } from "../qrFrame";
+import { checkJoin, hasReachedDailyLimit, type ProximityCheck, isExpired, isQrFrameFresh, startOfDayInZone } from "../rules";
 
 type Tx = Prisma.TransactionClient;
 
@@ -19,15 +21,19 @@ async function assertUnderDailyLimit(db: Tx | typeof prisma, deviceId: string, n
   }
 }
 
+// In "store" mode short codes are scoped to one store. In "twins" mode the
+// twins may resolve to different nearest stores, so codes are global.
+const codeScope = (storeId: string) => (config.proximityMode === "store" ? { storeId } : {});
+
 /** Phone A: open a 60-second, single-use sync session at `storeId`. */
-export async function createSession(deviceId: string, storeId: string, now = new Date()) {
+export async function createSession(deviceId: string, storeId: string, now = new Date(), location: LatLng | null = null) {
   await assertUnderDailyLimit(prisma, deviceId, now);
 
-  // Short codes only need to be unique among live sessions at one store.
+  // Short codes only need to be unique among live sessions.
   let shortCode = newShortCode();
   for (let i = 0; i < 5; i++) {
     const clash = await prisma.syncSession.findFirst({
-      where: { storeId, shortCode, status: "PENDING", expiresAt: { gt: now } },
+      where: { ...codeScope(storeId), shortCode, status: "PENDING", expiresAt: { gt: now } },
     });
     if (!clash) break;
     shortCode = newShortCode();
@@ -39,6 +45,8 @@ export async function createSession(deviceId: string, storeId: string, now = new
       shortCode,
       storeId,
       initiatorDeviceId: deviceId,
+      initiatorLat: location?.lat,
+      initiatorLng: location?.lng,
       expiresAt: new Date(now.getTime() + config.syncTokenTtlMs),
     },
   });
@@ -47,24 +55,42 @@ export async function createSession(deviceId: string, storeId: string, now = new
 export interface JoinInput {
   deviceId: string;
   storeId: string; // where the joiner is, already resolved server-side
-  token?: string; // from the QR code
-  shortCode?: string; // typed (camera denied / NFC path)
+  location?: LatLng | null; // joiner's GPS fix
+  locationWaived?: boolean; // dev mode / NFC tag stood in for GPS
+  qr?: string; // rotating frame scanned off Phone A's screen
+  shortCode?: string; // typed (only when config.allowTypedCode)
   now?: Date;
 }
 
 /** Phone B: claim the session and issue a voucher to both phones. */
-export async function joinSession({ deviceId, storeId, token, shortCode, now = new Date() }: JoinInput) {
-  const session = token
-    ? await prisma.syncSession.findUnique({ where: { token } })
-    : shortCode
+export async function joinSession({ deviceId, storeId, location = null, locationWaived = false, qr, shortCode, now = new Date() }: JoinInput) {
+  if (!qr && shortCode && !config.allowTypedCode) throw new SyncError("SCAN_REQUIRED");
+
+  const frame = qr ? parseQrFrame(qr) : null;
+  let session = frame
+    ? await prisma.syncSession.findUnique({ where: { id: frame.sessionId } })
+    : !qr && shortCode
       ? await prisma.syncSession.findFirst({
-          where: { storeId, shortCode: normaliseCode(shortCode) },
+          where: { ...codeScope(storeId), shortCode: normaliseCode(shortCode) },
           orderBy: { createdAt: "desc" },
         })
       : null;
+  if (frame && session && !verifyQrFrameSig(frame, session.token)) session = null; // forged frame
 
-  const problem = checkJoin(session, deviceId, storeId, now);
+  const proximity: ProximityCheck =
+    config.proximityMode === "store"
+      ? { mode: "store", joinerStoreId: storeId }
+      : {
+          mode: "twins",
+          initiator: session?.initiatorLat != null && session.initiatorLng != null ? { lat: session.initiatorLat, lng: session.initiatorLng } : null,
+          joiner: location,
+          maxDistanceMeters: config.twinMaxDistanceMeters,
+          locationWaived,
+        };
+  const problem = checkJoin(session, deviceId, proximity, now);
   if (problem) throw new SyncError(problem);
+  // A screenshot or forwarded link: the session is live but this frame isn't.
+  if (frame && !isQrFrameFresh(frame.issuedAtMs, now, config.qrMaxAgeMs, config.qrRotateMs)) throw new SyncError("QR_STALE");
   const s = session!;
 
   try {
@@ -122,5 +148,7 @@ export async function getSessionStatus(sessionId: string, deviceId: string, now 
   });
   if (!s || (s.initiatorDeviceId !== deviceId && s.joinerDeviceId !== deviceId)) return null;
   const status = s.status === "PAIRED" ? "PAIRED" : isExpired(s.expiresAt, now) ? "EXPIRED" : "PENDING";
-  return { status, expiresAt: s.expiresAt, voucherId: s.vouchers[0]?.id ?? null };
+  // Only Phone A gets the current QR frame, and only while it can be scanned.
+  const qr = status === "PENDING" && s.initiatorDeviceId === deviceId ? makeQrFrame(s.id, s.token, now) : null;
+  return { status, expiresAt: s.expiresAt, voucherId: s.vouchers[0]?.id ?? null, qr };
 }

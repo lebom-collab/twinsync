@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkJoin, checkRedeem, hasReachedDailyLimit, isExpired, startOfDayInZone } from "@/lib/rules";
+import { checkJoin, checkRedeem, hasReachedDailyLimit, isExpired, isQrFrameFresh, startOfDayInZone, type ProximityCheck } from "@/lib/rules";
 import { findStoreForLocation, haversineMeters } from "@/lib/geo";
 
 const now = new Date("2026-10-28T10:00:00Z");
@@ -19,28 +19,68 @@ describe("isExpired", () => {
   it("is expired after expiresAt", () => expect(isExpired(inSecs(-1), now)).toBe(true));
 });
 
+const atStore = (joinerStoreId: string): ProximityCheck => ({ mode: "store", joinerStoreId });
+
 describe("checkJoin", () => {
   it("accepts a fresh token from another device at the same store", () => {
-    expect(checkJoin(pending, "dev-b", "store-a", now)).toBeNull();
+    expect(checkJoin(pending, "dev-b", atStore("store-a"), now)).toBeNull();
   });
   it("rejects an unknown token", () => {
-    expect(checkJoin(null, "dev-b", "store-a", now)).toBe("TOKEN_NOT_FOUND");
+    expect(checkJoin(null, "dev-b", atStore("store-a"), now)).toBe("TOKEN_NOT_FOUND");
   });
   it("rejects an expired token", () => {
-    expect(checkJoin({ ...pending, expiresAt: inSecs(-1) }, "dev-b", "store-a", now)).toBe("TOKEN_EXPIRED");
+    expect(checkJoin({ ...pending, expiresAt: inSecs(-1) }, "dev-b", atStore("store-a"), now)).toBe("TOKEN_EXPIRED");
   });
   it("rejects a token that was already used (single use)", () => {
-    expect(checkJoin({ ...pending, status: "PAIRED", joinerDeviceId: "dev-c" }, "dev-b", "store-a", now)).toBe("TOKEN_USED");
+    expect(checkJoin({ ...pending, status: "PAIRED", joinerDeviceId: "dev-c" }, "dev-b", atStore("store-a"), now)).toBe("TOKEN_USED");
   });
   it("reports used before expired", () => {
-    expect(checkJoin({ ...pending, status: "PAIRED", joinerDeviceId: "dev-c", expiresAt: inSecs(-5) }, "dev-b", "store-a", now)).toBe("TOKEN_USED");
+    expect(checkJoin({ ...pending, status: "PAIRED", joinerDeviceId: "dev-c", expiresAt: inSecs(-5) }, "dev-b", atStore("store-a"), now)).toBe("TOKEN_USED");
   });
   it("rejects syncing with yourself", () => {
-    expect(checkJoin(pending, "dev-a", "store-a", now)).toBe("SAME_DEVICE");
+    expect(checkJoin(pending, "dev-a", atStore("store-a"), now)).toBe("SAME_DEVICE");
   });
   it("rejects a joiner at a different store", () => {
-    expect(checkJoin(pending, "dev-b", "store-b", now)).toBe("STORE_MISMATCH");
+    expect(checkJoin(pending, "dev-b", atStore("store-b"), now)).toBe("STORE_MISMATCH");
   });
+});
+
+describe("checkJoin in twins mode", () => {
+  const here = { lat: -26.1458, lng: 28.0416 };
+  const twins = (joiner: { lat: number; lng: number } | null, initiator: { lat: number; lng: number } | null = here, locationWaived = false): ProximityCheck => ({
+    mode: "twins",
+    initiator,
+    joiner,
+    maxDistanceMeters: 50,
+    locationWaived,
+  });
+  it("accepts twins ~10m apart", () => {
+    expect(checkJoin(pending, "dev-b", twins({ lat: -26.14589, lng: 28.0416 }), now)).toBeNull();
+  });
+  it("rejects twins ~200m apart", () => {
+    expect(checkJoin(pending, "dev-b", twins({ lat: -26.1476, lng: 28.0416 }), now)).toBe("TOO_FAR");
+  });
+  it("ignores which store each twin is nearest to", () => {
+    expect(checkJoin({ ...pending, storeId: "elsewhere" }, "dev-b", twins(here), now)).toBeNull();
+  });
+  it("needs both GPS fixes unless waived (dev mode)", () => {
+    expect(checkJoin(pending, "dev-b", twins(null), now)).toBe("LOCATION_REQUIRED");
+    expect(checkJoin(pending, "dev-b", twins(here, null), now)).toBe("LOCATION_REQUIRED");
+    expect(checkJoin(pending, "dev-b", twins(null, null, true), now)).toBeNull();
+  });
+  it("still applies the basic rules first", () => {
+    expect(checkJoin(pending, "dev-a", twins(here), now)).toBe("SAME_DEVICE");
+    expect(checkJoin({ ...pending, expiresAt: inSecs(-1) }, "dev-b", twins(here), now)).toBe("TOKEN_EXPIRED");
+  });
+});
+
+describe("rotating QR freshness", () => {
+  const rotate = 5000;
+  const maxAge = 30_000;
+  it("accepts a frame from a few seconds ago", () => expect(isQrFrameFresh(now.getTime() - 4000, now, maxAge, rotate)).toBe(true));
+  it("accepts a frame right at the limit", () => expect(isQrFrameFresh(now.getTime() - maxAge, now, maxAge, rotate)).toBe(true));
+  it("rejects a screenshot older than 30s", () => expect(isQrFrameFresh(now.getTime() - maxAge - 1, now, maxAge, rotate)).toBe(false));
+  it("rejects frames from the future", () => expect(isQrFrameFresh(now.getTime() + rotate + 1, now, maxAge, rotate)).toBe(false));
 });
 
 describe("checkRedeem", () => {

@@ -1,4 +1,4 @@
-import { tokenFromQrPayload } from "./syncApi";
+import { frameFromQrPayload } from "./syncApi";
 import { SyncChannelError, type AcquireOptions, type JoinCredential, type SyncProvider } from "./SyncProvider";
 
 /** Primary channel: Phone B scans the QR on Phone A's screen. Works everywhere with a camera. */
@@ -34,10 +34,10 @@ export class QrSyncProvider implements SyncProvider {
           { facingMode: "environment" },
           { fps: 10, qrbox: (w, h) => ({ width: Math.min(w, h) * 0.75, height: Math.min(w, h) * 0.75 }) },
           (text) => {
-            const token = tokenFromQrPayload(text);
-            if (!token) return; // keep scanning; probably some other QR code
+            const qr = frameFromQrPayload(text);
+            if (!qr) return; // keep scanning; probably some other QR code
             stop();
-            resolve({ token });
+            resolve({ qr });
           },
           () => {}, // per-frame "no QR found" noise
         )

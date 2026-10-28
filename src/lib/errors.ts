@@ -8,6 +8,9 @@ export type SyncErrorCode =
   | "TOKEN_USED"
   | "SAME_DEVICE"
   | "STORE_MISMATCH"
+  | "TOO_FAR"
+  | "QR_STALE"
+  | "SCAN_REQUIRED"
   | "DAILY_LIMIT"
   | "BAD_NFC_TAG"
   | "BAD_REQUEST";
@@ -20,6 +23,9 @@ export const SYNC_ERROR_MESSAGES: Record<SyncErrorCode, { title: string; body: s
   TOKEN_USED: { title: "Already synced", body: "Someone already used that code. Each code pairs exactly two phones." },
   SAME_DEVICE: { title: "That's your own code", body: "You can't sync with yourself — find a twin with another phone!" },
   STORE_MISMATCH: { title: "Different stores", body: "You and your twin need to be in the same store." },
+  QR_STALE: { title: "Scan it live", body: "Your twin's code refreshes every few seconds. Scan it straight off their screen, standing next to them." },
+  SCAN_REQUIRED: { title: "Scan your twin's screen", body: "Twin Sync works phone to phone. Hold your camera up to your twin's code." },
+  TOO_FAR: { title: "Get closer to your twin", body: "You need to be standing together to sync. Move next to your twin and try again." },
   DAILY_LIMIT: { title: "Come back tomorrow", body: "You've already unlocked today's Twin Sync deal on this phone." },
   BAD_NFC_TAG: { title: "Unknown NFC tag", body: "That tag isn't a Twin Sync counter tag. Try scanning your twin's QR instead." },
   BAD_REQUEST: { title: "Something went wrong", body: "Please try again." },

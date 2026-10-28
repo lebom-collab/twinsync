@@ -18,12 +18,12 @@ export default function Home() {
       <section className="mt-6 -rotate-2 overflow-hidden rounded-3xl bg-flame shadow-[0_8px_0_var(--color-flame-dark)]">
         <MealPhoto className="aspect-[16/10] bg-ink" />
         <div className="p-5">
-        <p className="font-display text-sm uppercase tracking-widest text-sun">In-store only · 10 min deal</p>
+        <p className="font-display text-sm uppercase tracking-widest text-sun">{config?.proximityMode === "store" ? "In-store only" : "Stand together"} · 10 min deal</p>
         <h1 className="font-display text-4xl uppercase leading-none">{config?.dealTitle ?? "Two Is Better"}</h1>
         <p className="mt-2 text-lg">
           {config?.dealItems ?? "2 Big Johns"} for <strong className="font-display text-sun">{config?.price ?? "…"}</strong>
         </p>
-        <p className="mt-1 text-sm text-cream/80">Sync phones with a friend in the store and you both unlock it.</p>
+        <p className="mt-1 text-sm text-cream/80">Hold your phone up to a friend&apos;s, sync, and you both unlock it.</p>
         </div>
       </section>
 

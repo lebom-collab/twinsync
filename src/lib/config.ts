@@ -39,6 +39,32 @@ export const config = {
   get cookieSecret() {
     return process.env.COOKIE_SECRET ?? "dev-only-insecure-secret";
   },
+  /**
+   * "twins": phones must be within twinMaxDistanceMeters of each other,
+   * anywhere; the voucher goes to the nearest store.
+   * "store": both phones must be inside the same store's radius.
+   */
+  get proximityMode(): "twins" | "store" {
+    return process.env.PROXIMITY_MODE === "store" ? "store" : "twins";
+  },
+  get twinMaxDistanceMeters() {
+    return num("TWIN_MAX_DISTANCE_METERS", 50);
+  },
+  /** Phone A's QR changes this often, so screenshots/forwarded links go stale. */
+  get qrRotateMs() {
+    return num("QR_ROTATE_SECONDS", 5) * 1000;
+  },
+  /** Oldest QR frame still accepted (covers scan + GPS lookup time). */
+  get qrMaxAgeMs() {
+    return num("QR_MAX_AGE_SECONDS", 30) * 1000;
+  },
+  /**
+   * Typing the 6-char code works at any distance (it can be read out over a
+   * call), so in "twins" mode it's only allowed in dev mode.
+   */
+  get allowTypedCode() {
+    return this.proximityMode === "store" || this.devMode;
+  },
   get devMode() {
     return process.env.DEV_MODE === "true";
   },

@@ -3,6 +3,7 @@
 // never be re-implemented on the client.
 
 import type { RedeemStatus, SyncErrorCode } from "./errors";
+import { haversineMeters, type LatLng } from "./geo";
 
 export interface SessionLike {
   storeId: string;
@@ -22,22 +23,44 @@ export function isExpired(expiresAt: Date, now: Date): boolean {
   return now.getTime() >= expiresAt.getTime();
 }
 
+export type ProximityCheck =
+  | { mode: "store"; joinerStoreId: string }
+  | {
+      mode: "twins";
+      initiator: LatLng | null;
+      joiner: LatLng | null;
+      maxDistanceMeters: number;
+      /** Dev mode or an NFC counter tag stands in for missing GPS. */
+      locationWaived: boolean;
+    };
+
 /**
- * Can `joinerDeviceId`, currently at `joinerStoreId`, join `session`?
+ * Can `joinerDeviceId` join `session`?
  * Order matters: report "used" before "expired" so a late scan of a code that
  * was already paired says so, rather than just "expired".
+ *
+ * Proximity, by mode:
+ * - "store": both phones resolved to the same store.
+ * - "twins": the two phones' GPS fixes are within maxDistanceMeters. GPS is
+ *   spoofable, so this is a speed bump; the till check is the real safeguard.
  */
 export function checkJoin(
   session: SessionLike | null,
   joinerDeviceId: string,
-  joinerStoreId: string,
+  proximity: ProximityCheck,
   now: Date,
 ): SyncErrorCode | null {
   if (!session) return "TOKEN_NOT_FOUND";
   if (session.status !== "PENDING" || session.joinerDeviceId) return "TOKEN_USED";
   if (isExpired(session.expiresAt, now)) return "TOKEN_EXPIRED";
   if (session.initiatorDeviceId === joinerDeviceId) return "SAME_DEVICE";
-  if (session.storeId !== joinerStoreId) return "STORE_MISMATCH";
+  if (proximity.mode === "store") {
+    if (session.storeId !== proximity.joinerStoreId) return "STORE_MISMATCH";
+  } else if (proximity.initiator && proximity.joiner) {
+    if (haversineMeters(proximity.initiator, proximity.joiner) > proximity.maxDistanceMeters) return "TOO_FAR";
+  } else if (!proximity.locationWaived) {
+    return "LOCATION_REQUIRED";
+  }
   return null;
 }
 
@@ -82,4 +105,13 @@ export function startOfDayInZone(now: Date, timeZone: string): Date {
   const wallAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
   const offsetMs = wallAsUtc - Math.floor(now.getTime() / 1000) * 1000;
   return new Date(Date.UTC(get("year"), get("month") - 1, get("day")) - offsetMs);
+}
+
+/**
+ * Is a rotating-QR frame issued at `issuedAtMs` still acceptable at `now`?
+ * Frames from the future (clock games) or older than `maxAgeMs` are rejected.
+ */
+export function isQrFrameFresh(issuedAtMs: number, now: Date, maxAgeMs: number, rotateMs: number): boolean {
+  const age = now.getTime() - issuedAtMs;
+  return age >= -rotateMs && age <= maxAgeMs;
 }

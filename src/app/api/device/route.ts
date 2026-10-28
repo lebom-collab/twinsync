@@ -14,6 +14,8 @@ export const GET = handle(async () => {
     dealItems: config.dealItems,
     price: formatPrice(config.dealPriceCents),
     devMode: config.devMode,
+    proximityMode: config.proximityMode,
+    allowTypedCode: config.allowTypedCode,
     // Store list is only exposed for the dev-mode picker.
     devStores: config.devMode ? (await listStores()).map(({ id, name }) => ({ id, name })) : [],
   });

@@ -1,12 +1,12 @@
 # Twin Sync — "Two Is Better" PWA prototype
 
-Two customers in the same store sync their phones and both unlock **2 Big Johns for R59.90**. The deal can only be used **within 10 minutes**, and only **at the store where they synced**.
+Two customers standing together hold their phones up to each other and both unlock **2 Big Johns for R59.90**. The deal can only be used **within 10 minutes**, and only **at the store nearest to where they synced**.
 
 This is a mobile-first Next.js PWA. It uses placeholder branding only, so swap in real artwork later.
 
 - **Stack:** Next.js 15 (App Router) · TypeScript · Tailwind v4 · Prisma + SQLite · SSE · `qrcode` / `html5-qrcode`
-- **Primary sync:** a QR handshake. Phone A shows a 60-second code and Phone B scans it.
-- **Optional sync:** a Web NFC counter tag (Chrome on Android), plus a 6-character code.
+- **Primary sync:** a live QR handshake. Phone A shows a QR that refreshes every 5 seconds; Phone B scans it off the screen, which only works at arm's length.
+- **Optional, `store` mode only:** a Web NFC counter tag (Chrome on Android), plus a 6-character code.
 - **Staff:** a `/staff` till page, protected by a PIN, to verify and redeem vouchers.
 
 ---
@@ -40,11 +40,14 @@ Requires Node 20+ (built with Node 22).
 | `DEAL_PRICE_CENTS` | `5990` | **R59.90**. Each voucher stores the price at issue time |
 | `SYNC_TOKEN_TTL_SECONDS` | `60` | How long Phone A's QR or code is valid |
 | `VOUCHER_TTL_SECONDS` | `600` | How long the deal stays redeemable |
+| `PROXIMITY_MODE` | `twins` | `twins`: the phones must be together, anywhere (see below). `store`: both phones inside the same store's 100 m radius |
+| `TWIN_MAX_DISTANCE_METERS` | `50` | GPS backstop in `twins` mode. GPS can't resolve 2 m, so keep this coarse |
+| `QR_ROTATE_SECONDS` / `QR_MAX_AGE_SECONDS` | `5` / `30` | How often Phone A's QR changes, and the oldest frame still accepted |
 | `MAX_DEALS_PER_DEVICE_PER_DAY` | `1` | Rate limit per device |
 | `DAY_TIMEZONE` | `Africa/Johannesburg` | Where "today" starts and ends for the limit |
 | `STAFF_PIN` | `1234` | Till PIN. **Change it** |
 | `COOKIE_SECRET` | — | Signs the device and staff cookies. **Change it** |
-| `DEV_MODE` | `true` | Shows the dev panel and allows bypassing location. **Set `false` in prod** |
+| `DEV_MODE` | `true` | Shows the dev panel. Lets a phone skip GPS, and in `twins` mode allows typing the 6-character code. **Set `false` on any public link** |
 
 ### Demo stores (fictional, approximate coordinates, 100 m radius)
 
@@ -73,14 +76,14 @@ In **each** window:
 
 Then:
 3. **Window A:** tap **Show my code**. You get a QR, a 6-character code and a 60-second countdown.
-4. **Window B:** tap **Type your twin's code instead**, enter the 6 characters, and tap **Sync!** (a laptop webcam can scan the QR too, with **Scan twin's code**).
+4. **Window B:** tap **Type your twin's code instead (dev mode)**, enter the 6 characters, and tap **Sync!** (a laptop webcam can scan the QR too, with **Scan twin's code**).
 5. Both windows show the unlock animation, then a 10:00 voucher. Window A updates on its own via Server-Sent Events.
 6. Open <http://localhost:3000/staff>, enter PIN `1234`, choose the store, and type the voucher code. Try a different store to see **WRONG STORE**, redeem it, then check it again to see **ALREADY REDEEMED**.
 
 **Hitting the daily limit while testing?** Use **Dev mode → Reset this device** to get a new device ID.
 
 Things to try:
-- Choose different stores in A and B to see **Different stores**.
+- With `PROXIMITY_MODE=store`, choose different stores in A and B to see **Different stores**.
 - Wait more than 60 seconds before joining to see **Too slow, twin!**
 - Enter a used code to see **Already synced**.
 
@@ -120,7 +123,7 @@ Local dev stays on SQLite.
    |---|---|
    | `STAFF_PIN` | a new PIN (not `1234`) |
    | `COOKIE_SECRET` | a long random string, e.g. from `openssl rand -base64 32` |
-   | `DEV_MODE` | `true` for desk and phone demos (store picker), `false` for a real in-store pilot |
+   | `DEV_MODE` | `false`. In `twins` mode phones only need a GPS fix (any location works), and dev mode would let anyone skip the distance check and type codes remotely |
    | `DEAL_PRICE_CENTS`, `DEAL_TITLE`, `DEAL_ITEMS` | optional, the defaults are R59.90 / Two Is Better / 2 Big Johns |
 
 4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**. You get a permanent `https://<project>.vercel.app` link with HTTPS, so the camera and GPS work on phones.
@@ -138,17 +141,18 @@ Every push to `main` redeploys. To move the demo stores, edit `prisma/seed.ts` a
 ```
 Phone A                       Server                              Phone B
 ───────                       ──────                              ───────
-GPS / dev store ─POST /api/sync──▶ resolve store (≤100 m)
+GPS / dev store ─POST /api/sync──▶ nearest store, save A's GPS
                                   check daily limit
                                   SyncSession{token, shortCode,
-◀── QR(https://…/sync?t=token) ─── expiresAt=now+60s}
+◀── QR frame, new every 5 s ────── expiresAt=now+60s}
     + 6-char code
 SSE /api/sync/:id/events ◀────┐
-                              │                    scan QR / type code
+                              │                 scan the live QR
                               │   POST /api/sync/join ◀──────────── + GPS / NFC tag
                               │   resolve joiner's store
                               │   rules: not used, not expired,
-                              │          not same device, same store
+                              │          not same device, frame ≤30 s old,
+                              │          A and B GPS ≤50 m apart
                               │   TX: atomic claim PENDING→PAIRED
                               │       re-check both daily limits
                               │       create 2 Vouchers (now+10 min)
@@ -156,7 +160,7 @@ SSE /api/sync/:id/events ◀────┐
 /voucher/:id                                                     /voucher/:id
 ```
 
-The QR encodes a URL, so Phone B can also scan it with the phone's own camera app. That opens `/sync?t=…`, which joins automatically.
+The QR encodes a URL, so Phone B can also scan it with the phone's own camera app. That opens `/sync?q=…`, which joins automatically, as long as the frame is still fresh.
 
 ### Code map
 
@@ -177,11 +181,12 @@ The QR encodes a URL, so Phone B can also scan it with the phone's own camera ap
 |---|---|
 | Sync token is valid for 60 s and is single-use | `checkJoin` + an atomic `updateMany … WHERE status='PENDING' AND expiresAt>now`. Two simultaneous scans can't both win (tested). |
 | A device can't sync with itself | Anonymous device ID in an **HMAC-signed httpOnly cookie** (`src/lib/device.ts`) |
-| Both phones are at the same store | The server resolves each phone's store from its own presence proof |
+| **Twins are physically together (`twins` mode)** | GPS can't measure 2 m (phone error is 5–20 m outdoors, worse indoors). Instead: (1) **the QR must be scanned live**. Frames rotate every 5 s, are HMAC-signed with the session's private token, and are rejected after 30 s, so screenshots and forwarded links fail (`QR_STALE`). (2) **No typed codes** outside dev mode (`SCAN_REQUIRED`), since a code can be read out over a call. (3) **GPS backstop:** both fixes must be within `TWIN_MAX_DISTANCE_METERS` (`TOO_FAR`), which blocks live relays from far away. A native app could use BLE signal strength or NFC for a true ~2 m check (see below). |
+| Both phones are at the same store (`store` mode) | The server resolves each phone's store from its own presence proof |
 | One deal per device per day (configurable) | Checked at create **and** inside the join transaction for both devices. The day follows `DAY_TIMEZONE`. |
 | Voucher lasts 10 minutes, works at one store, single use | `expiresAt` and `storeId` are stored on the voucher. Redeem is one conditional `UPDATE` (double-submit is safe, tested). The client countdown is display-only. |
 | Location checked at sync time | `storeService.resolveStore`. GPS **can be spoofed** (comments say so). The staff redemption check is the real safeguard. |
-| Dev bypass can't be abused | The server ignores `devStoreId` unless `DEV_MODE=true` |
+| Dev bypass can't be abused | The server ignores `devStoreId` and typed codes (in `twins` mode) unless `DEV_MODE=true` |
 | Staff PIN | Constant-time compare, signed 12-hour cookie, 1-minute lockout after 5 bad tries |
 
 Known prototype limits:

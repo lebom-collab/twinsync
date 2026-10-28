@@ -14,7 +14,7 @@ export interface PresenceProof {
 
 /** What a channel hands over so Phone B can join Phone A's session. */
 export interface JoinCredential {
-  token?: string; // full token (QR, or a future native peer-to-peer exchange)
+  qr?: string; // rotating QR frame (or, natively, a frame sent over NFC/BLE)
   shortCode?: string; // 6-char code typed by the user
   nfc?: { storeId: string; tagSecret: string }; // store proof from a counter tag
 }

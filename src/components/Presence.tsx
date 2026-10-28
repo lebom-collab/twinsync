@@ -43,11 +43,12 @@ export function PresenceNotice() {
 }
 
 export function StoreChip() {
-  const { presence } = useApp();
+  const { presence, config } = useApp();
   if (presence.kind !== "ok") return null;
   return (
     <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-coal px-4 py-2 text-sm font-semibold">
-      <span className="h-2.5 w-2.5 rounded-full bg-green-400" aria-hidden /> {presence.store.name}
+      <span className="h-2.5 w-2.5 rounded-full bg-green-400" aria-hidden /> {config?.proximityMode === "twins" ? "Nearest: " : ""}
+      {presence.store.name}
     </div>
   );
 }

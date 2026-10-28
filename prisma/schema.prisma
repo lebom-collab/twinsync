@@ -37,6 +37,9 @@ model SyncSession {
   storeId           String
   store             Store     @relation(fields: [storeId], references: [id])
   initiatorDeviceId String
+  // Phone A's GPS at create time, for the "twins near each other" check.
+  initiatorLat      Float?
+  initiatorLng      Float?
   joinerDeviceId    String?
   status            String    @default("PENDING") // PENDING | PAIRED
   expiresAt         DateTime

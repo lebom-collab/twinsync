@@ -43,6 +43,16 @@ export function findStoreForLocation<T extends GeoStore>(
   return best;
 }
 
+/** Nearest store regardless of radius ("twins" mode), or null if none. */
+export function findNearestStore<T extends GeoStore>(point: LatLng, stores: T[]): { store: T; distanceMeters: number } | null {
+  let best: { store: T; distanceMeters: number } | null = null;
+  for (const store of stores) {
+    const d = haversineMeters(point, store);
+    if (!best || d < best.distanceMeters) best = { store, distanceMeters: d };
+  }
+  return best;
+}
+
 export function isValidLatLng(p: unknown): p is LatLng {
   if (!p || typeof p !== "object") return false;
   const { lat, lng } = p as Record<string, unknown>;
