@@ -1,0 +1,66 @@
+// Twin Sync prototype schema.
+// SQLite for the prototype; switch `provider` to "postgresql" and update
+// DATABASE_URL to move to Postgres. Status fields are plain strings (not
+// enums) so the schema stays identical across both providers.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Store {
+  id           String        @id
+  name         String
+  lat          Float
+  lng          Float
+  radiusMeters Int           @default(100)
+  // Shared secret written onto the store's NFC counter sticker.
+  nfcTagSecret String?
+  sessions     SyncSession[]
+  vouchers     Voucher[]
+}
+
+model Device {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  vouchers  Voucher[]
+}
+
+model SyncSession {
+  id                String    @id @default(cuid())
+  token             String    @unique
+  shortCode         String
+  storeId           String
+  store             Store     @relation(fields: [storeId], references: [id])
+  initiatorDeviceId String
+  joinerDeviceId    String?
+  status            String    @default("PENDING") // PENDING | PAIRED
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
+  pairedAt          DateTime?
+  vouchers          Voucher[]
+
+  @@index([storeId, shortCode])
+}
+
+model Voucher {
+  id            String      @id @default(cuid())
+  code          String      @unique
+  deviceId      String
+  device        Device      @relation(fields: [deviceId], references: [id])
+  storeId       String
+  store         Store       @relation(fields: [storeId], references: [id])
+  syncSessionId String
+  syncSession   SyncSession @relation(fields: [syncSessionId], references: [id])
+  priceCents    Int
+  createdAt     DateTime    @default(now())
+  expiresAt     DateTime
+  redeemedAt    DateTime?
+
+  @@unique([syncSessionId, deviceId])
+  @@index([deviceId, createdAt])
+}

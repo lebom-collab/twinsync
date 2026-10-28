@@ -1,26 +1,69 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* Placeholder fast-food palette. Swap for brand tokens later. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-flame: #e31837;
+  --color-flame-dark: #b5102a;
+  --color-sun: #ffc72c;
+  --color-sun-dark: #e0a800;
+  --color-ink: #0d0d0d;
+  --color-coal: #1c1c1c;
+  --color-ash: #2b2b2b;
+  --color-cream: #fff8e6;
+  --font-display: var(--font-archivo-black), "Arial Black", Impact, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ink);
+  color: var(--color-cream);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* Chunky tilted stripes used as a background texture. */
+.stripes {
+  background-image: repeating-linear-gradient(
+    -35deg,
+    rgba(255, 199, 44, 0.06) 0 18px,
+    transparent 18px 36px
+  );
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0.3) rotate(-12deg); opacity: 0; }
+  60% { transform: scale(1.15) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-4deg); }
+}
+@keyframes slide-left {
+  from { transform: translateX(-120%) rotate(-20deg); }
+  to { transform: translateX(0) rotate(-6deg); }
+}
+@keyframes slide-right {
+  from { transform: translateX(120%) rotate(20deg); }
+  to { transform: translateX(0) rotate(6deg); }
+}
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(255, 199, 44, 0.6); }
+  100% { box-shadow: 0 0 0 28px rgba(255, 199, 44, 0); }
+}
+@keyframes wobble {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+
+.animate-pop-in { animation: pop-in 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
+.animate-slide-left { animation: slide-left 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.animate-slide-right { animation: slide-right 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.animate-pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
+.animate-wobble { animation: wobble 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop-in, .animate-slide-left, .animate-slide-right,
+  .animate-pulse-ring, .animate-wobble { animation: none; }
+}
+
+/* html5-qrcode injects its own chrome; keep it tidy. */
+#qr-reader video { border-radius: 1rem; object-fit: cover; }
+#qr-reader img[alt="Info icon"] { display: none; }
