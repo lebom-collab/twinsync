@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, postJson, type PresenceProof } from "@/sync";
 
 export interface AppConfig {
@@ -28,10 +28,15 @@ interface AppContextValue {
   refreshPresence: () => void;
   devStoreId: string | null;
   setDevStoreId: (id: string | null) => void;
+  /** Other phones with Twin Sync open nearby right now (null = not known yet). */
+  nearby: number | null;
+  /** Presence proof with the freshest GPS fix (read at the moment you call the API). */
+  latestProof: () => PresenceProof | null;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 const DEV_KEY = "twinsync.devStoreId";
+const HEARTBEAT_MS = 4000;
 
 function getPosition(): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) =>
@@ -48,6 +53,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [presence, setPresence] = useState<PresenceState>({ kind: "checking" });
   const [devStoreId, setDevStoreIdState] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [nearby, setNearby] = useState<number | null>(null);
+  const proofRef = useRef<PresenceProof | null>(null);
 
   // Device cookie + config. Must finish before any other API call so the
   // device cookie exists.
@@ -89,6 +96,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const { store } = await postJson<{ store: { id: string; name: string } }>("/api/stores/locate", proof);
+        proofRef.current = proof;
         done({ kind: "ok", store, proof });
       } catch (e) {
         done({ kind: e instanceof ApiError && e.code === "NOT_IN_STORE" ? "not_in_store" : "unavailable" });
@@ -100,6 +108,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [config, devStoreId, nonce]);
 
+  // Keep the GPS fix fresh while the app is open (twins move around).
+  useEffect(() => {
+    if (presence.kind !== "ok" || !presence.proof.location || !("geolocation" in navigator)) return;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => (proofRef.current = { location: { lat: pos.coords.latitude, lng: pos.coords.longitude } }),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [presence]);
+
+  // Heartbeat while visible: "I'm open, here". Hidden tabs stop counting.
+  useEffect(() => {
+    if (presence.kind !== "ok") {
+      setNearby(null);
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+
+    const beat = async () => {
+      if (stopped || document.visibilityState !== "visible" || !proofRef.current) return;
+      try {
+        const { nearby } = await postJson<{ nearby: number }>("/api/presence", proofRef.current);
+        if (!stopped) setNearby(nearby);
+      } catch {
+        /* keep last value; try again next beat */
+      }
+      if (!stopped) timer = setTimeout(beat, HEARTBEAT_MS);
+    };
+    const leave = () => fetch("/api/presence", { method: "DELETE", keepalive: true }).catch(() => {});
+    const onVisibility = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "visible") beat();
+      else leave();
+    };
+
+    beat();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", leave);
+    };
+  }, [presence]);
+
   const setDevStoreId = useCallback((id: string | null) => {
     try {
       if (id) localStorage.setItem(DEV_KEY, id);
@@ -109,8 +165,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ config, presence, refreshPresence: () => setNonce((n) => n + 1), devStoreId, setDevStoreId }),
-    [config, presence, devStoreId, setDevStoreId],
+    () => ({
+      config,
+      presence,
+      refreshPresence: () => setNonce((n) => n + 1),
+      devStoreId,
+      setDevStoreId,
+      nearby,
+      latestProof: () => proofRef.current,
+    }),
+    [config, presence, devStoreId, setDevStoreId, nearby],
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

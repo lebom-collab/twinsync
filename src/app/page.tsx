@@ -6,8 +6,10 @@ import { DevPanel, PresenceNotice, StoreChip } from "@/components/Presence";
 import { MealPhoto, Wordmark } from "@/components/ui";
 
 export default function Home() {
-  const { config, presence } = useApp();
+  const { config, presence, nearby } = useApp();
   const ready = presence.kind === "ok";
+  // Lights up only while another phone has Twin Sync open nearby.
+  const twinHere = ready && (nearby ?? 0) > 0;
 
   return (
     <>
@@ -33,19 +35,27 @@ export default function Home() {
       </div>
 
       <div className="flex flex-1 items-center justify-center py-8">
-        {ready ? (
+        {twinHere ? (
           <Link
             href="/sync"
             className="animate-pulse-ring flex h-60 w-60 flex-col items-center justify-center rounded-full bg-sun text-center font-display uppercase text-ink shadow-[0_10px_0_var(--color-sun-dark)] transition active:translate-y-2 active:shadow-[0_2px_0_var(--color-sun-dark)]"
           >
             <span className="text-5xl leading-none">Twin</span>
             <span className="text-5xl leading-none">Sync</span>
-            <span className="mt-2 text-xs tracking-widest">Tap to start</span>
+            <span className="mt-2 text-xs tracking-widest">{nearby === 1 ? "Twin found · tap to start" : `${nearby} twins nearby · tap`}</span>
           </Link>
         ) : (
-          <div aria-disabled className="flex h-60 w-60 flex-col items-center justify-center rounded-full bg-ash text-center font-display uppercase text-cream/30">
-            <span className="text-5xl leading-none">Twin</span>
-            <span className="text-5xl leading-none">Sync</span>
+          <div className="flex flex-col items-center gap-4">
+            <div aria-disabled className="flex h-60 w-60 flex-col items-center justify-center rounded-full bg-ash text-center font-display uppercase text-cream/30">
+              <span className="text-5xl leading-none">Twin</span>
+              <span className="text-5xl leading-none">Sync</span>
+            </div>
+            {ready && (
+              <p className="flex max-w-xs items-start gap-2 text-center text-sm text-cream/70" role="status">
+                <span className="mt-1.5 h-2 w-2 shrink-0 animate-ping rounded-full bg-sun" aria-hidden />
+                {nearby === null ? "Looking for twins nearby…" : "No twin nearby yet. Ask a friend to open this link on their phone, right next to you. The button lights up when they do."}
+              </p>
+            )}
           </div>
         )}
       </div>

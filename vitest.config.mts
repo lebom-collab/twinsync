@@ -13,7 +13,7 @@ export default defineConfig({
       MAX_DEALS_PER_DEVICE_PER_DAY: "1",
       SYNC_TOKEN_TTL_SECONDS: "60",
       VOUCHER_TTL_SECONDS: "600",
-      DEAL_PRICE_CENTS: "5990",
+      DEAL_PRICE_CENTS: "9990",
     },
     // Integration tests share one SQLite file; keep them sequential.
     fileParallelism: false,

@@ -1,6 +1,6 @@
 # Twin Sync — "Two Is Better" PWA prototype
 
-Two customers standing together hold their phones up to each other and both unlock **2 Big Johns for R59.90**. The deal can only be used **within 10 minutes**, and only **at the store nearest to where they synced**.
+Two customers standing together hold their phones up to each other and both unlock **2 Big Johns for R99.90**. The deal can only be used **within 10 minutes**, and only **at the store nearest to where they synced**.
 
 This is a mobile-first Next.js PWA. It uses placeholder branding only, so swap in real artwork later.
 
@@ -37,12 +37,13 @@ Requires Node 20+ (built with Node 22).
 | Var | Default | Meaning |
 |---|---|---|
 | `DEAL_TITLE` / `DEAL_ITEMS` | `Two Is Better` / `2 Big Johns` | Copy shown on voucher and till |
-| `DEAL_PRICE_CENTS` | `5990` | **R59.90**. Each voucher stores the price at issue time |
+| `DEAL_PRICE_CENTS` | `9990` | **R99.90**. Each voucher stores the price at issue time |
 | `SYNC_TOKEN_TTL_SECONDS` | `60` | How long Phone A's QR or code is valid |
 | `VOUCHER_TTL_SECONDS` | `600` | How long the deal stays redeemable |
 | `PROXIMITY_MODE` | `twins` | `twins`: the phones must be together, anywhere (see below). `store`: both phones inside the same store's 100 m radius |
 | `TWIN_MAX_DISTANCE_METERS` | `50` | GPS backstop in `twins` mode. GPS can't resolve 2 m, so keep this coarse |
 | `QR_ROTATE_SECONDS` / `QR_MAX_AGE_SECONDS` | `5` / `30` | How often Phone A's QR changes, and the oldest frame still accepted |
+| `PRESENCE_FRESH_SECONDS` | `15` | A phone counts as "open nearby" if it sent a heartbeat this recently |
 | `MAX_DEALS_PER_DEVICE_PER_DAY` | `1` | Rate limit per device |
 | `DAY_TIMEZONE` | `Africa/Johannesburg` | Where "today" starts and ends for the limit |
 | `STAFF_PIN` | `1234` | Till PIN. **Change it** |
@@ -72,7 +73,7 @@ The device ID lives in a cookie. Two normal tabs in the same browser therefore c
 
 In **each** window:
 1. Open <http://localhost:3000>, scroll down to **🛠 Dev mode**, and choose the **same store** under "Pretend I'm at". This bypasses GPS.
-2. Tap **Twin Sync**.
+2. Keep both windows open and visible. The **Twin Sync** button stays grey until the other window is open at the same store, then lights up ("Twin found"). Tap it.
 
 Then:
 3. **Window A:** tap **Show my code**. You get a QR, a 6-character code and a 60-second countdown.
@@ -124,7 +125,7 @@ Local dev stays on SQLite.
    | `STAFF_PIN` | a new PIN (not `1234`) |
    | `COOKIE_SECRET` | a long random string, e.g. from `openssl rand -base64 32` |
    | `DEV_MODE` | `false`. In `twins` mode phones only need a GPS fix (any location works), and dev mode would let anyone skip the distance check and type codes remotely |
-   | `DEAL_PRICE_CENTS`, `DEAL_TITLE`, `DEAL_ITEMS` | optional, the defaults are R59.90 / Two Is Better / 2 Big Johns |
+   | `DEAL_PRICE_CENTS`, `DEAL_TITLE`, `DEAL_ITEMS` | optional, the defaults are R99.90 / Two Is Better / 2 Big Johns |
 
 4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**. You get a permanent `https://<project>.vercel.app` link with HTTPS, so the camera and GPS work on phones.
 
@@ -186,6 +187,7 @@ The QR encodes a URL, so Phone B can also scan it with the phone's own camera ap
 | One deal per device per day (configurable) | Checked at create **and** inside the join transaction for both devices. The day follows `DAY_TIMEZONE`. |
 | Voucher lasts 10 minutes, works at one store, single use | `expiresAt` and `storeId` are stored on the voucher. Redeem is one conditional `UPDATE` (double-submit is safe, tested). The client countdown is display-only. |
 | Location checked at sync time | `storeService.resolveStore`. GPS **can be spoofed** (comments say so). The staff redemption check is the real safeguard. |
+| Twin Sync is greyed out until a twin is nearby | While the app is open and on screen, each phone sends a heartbeat (`POST /api/presence`) every 4 s with its GPS fix. The server answers with a **count** of other phones seen in the last 15 s within `TWIN_MAX_DISTANCE_METERS` (dev-mode phones match by store), never their locations. The button and both sync options are disabled at 0. `POST /api/sync` refuses with `NO_TWIN_NEARBY` too, so the rule isn't just cosmetic. Hidden tabs stop counting at once, and locations are pruned after 5 minutes. |
 | Dev bypass can't be abused | The server ignores `devStoreId` and typed codes (in `twins` mode) unless `DEV_MODE=true` |
 | Staff PIN | Constant-time compare, signed 12-hour cookie, 1-minute lockout after 5 bad tries |
 

@@ -19,7 +19,7 @@ export const config = {
     return `${this.dealTitle} – ${this.dealItems}`;
   },
   get dealPriceCents() {
-    return num("DEAL_PRICE_CENTS", 5990);
+    return num("DEAL_PRICE_CENTS", 9990);
   },
   get syncTokenTtlMs() {
     return num("SYNC_TOKEN_TTL_SECONDS", 60) * 1000;
@@ -64,6 +64,10 @@ export const config = {
    */
   get allowTypedCode() {
     return this.proximityMode === "store" || this.devMode;
+  },
+  /** A phone counts as "open nearby" if it pinged within this window. */
+  get presenceFreshMs() {
+    return num("PRESENCE_FRESH_SECONDS", 15) * 1000;
   },
   get devMode() {
     return process.env.DEV_MODE === "true";

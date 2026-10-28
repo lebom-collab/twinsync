@@ -5,6 +5,7 @@ import { createSession, getSessionStatus, joinSession } from "@/lib/services/syn
 import { redeemVoucher, verifyVoucher } from "@/lib/services/voucherService";
 import { resolveStore } from "@/lib/services/storeService";
 import { makeQrFrame } from "@/lib/qrFrame";
+import { countNearby, heartbeat, leave } from "@/lib/services/presenceService";
 
 const T0 = new Date("2026-10-28T10:00:00Z");
 const at = (secs: number) => new Date(T0.getTime() + secs * 1000);
@@ -21,6 +22,7 @@ async function expectSyncError(p: Promise<unknown>, code: string) {
 }
 
 beforeEach(async () => {
+  await prisma.presence.deleteMany();
   await prisma.voucher.deleteMany();
   await prisma.syncSession.deleteMany();
   await prisma.device.deleteMany();
@@ -45,7 +47,7 @@ describe("sync handshake", () => {
     expect(res.initiatorVoucher.deviceId).toBe(a);
     expect(res.joinerVoucher.deviceId).toBe(b);
     expect(res.joinerVoucher.storeId).toBe("store-a");
-    expect(res.joinerVoucher.priceCents).toBe(5990);
+    expect(res.joinerVoucher.priceCents).toBe(9990);
     expect(res.joinerVoucher.expiresAt.getTime() - at(10).getTime()).toBe(600_000);
 
     const status = await getSessionStatus(s.id, a, at(11));
@@ -239,5 +241,43 @@ describe("twins mode (phones near each other, anywhere)", () => {
     expect(f0).toBeTruthy();
     expect(f6).not.toBe(f0);
     expect(await getSessionStatus(s.id, x, at(0))).toBeNull();
+  });
+});
+
+describe("presence heartbeats", () => {
+  const here = { lat: -26.2041, lng: 28.0473 };
+  const near = { lat: -26.20412, lng: 28.04731 };
+  const far = { lat: -26.208, lng: 28.0473 };
+  const p = (location: { lat: number; lng: number }) => ({ store: { id: "store-a", name: "Store A" }, location, locationWaived: false });
+
+  beforeEach(() => {
+    process.env.PROXIMITY_MODE = "twins";
+  });
+  afterAll(() => {
+    process.env.PROXIMITY_MODE = "store";
+  });
+
+  it("greys out alone, lights up when a twin opens the link nearby", async () => {
+    expect(await heartbeat("phone-a", p(here), at(0))).toBe(0);
+    expect(await heartbeat("phone-far", p(far), at(1))).toBe(0);
+    expect(await countNearby("phone-a", p(here), at(1))).toBe(0);
+    expect(await heartbeat("phone-b", p(near), at(2))).toBe(1);
+    expect(await countNearby("phone-a", p(here), at(2))).toBe(1);
+  });
+
+  it("drops a twin who closes the app or goes quiet", async () => {
+    await heartbeat("phone-a", p(here), at(0));
+    await heartbeat("phone-b", p(near), at(0));
+    expect(await countNearby("phone-a", p(here), at(10))).toBe(1);
+    expect(await countNearby("phone-a", p(here), at(16))).toBe(0); // no beat for 16s
+    await heartbeat("phone-b", p(near), at(20));
+    await leave("phone-b");
+    expect(await countNearby("phone-a", p(here), at(21))).toBe(0);
+  });
+
+  it("prunes old locations", async () => {
+    await heartbeat("phone-old", p(here), at(0));
+    await heartbeat("phone-a", p(here), at(400));
+    expect(await prisma.presence.findUnique({ where: { deviceId: "phone-old" } })).toBeNull();
   });
 });

@@ -115,3 +115,31 @@ export function isQrFrameFresh(issuedAtMs: number, now: Date, maxAgeMs: number, 
   const age = now.getTime() - issuedAtMs;
   return age >= -rotateMs && age <= maxAgeMs;
 }
+
+export interface PresencePing {
+  deviceId: string;
+  storeId: string;
+  location: LatLng | null;
+  waived: boolean;
+  lastSeen: Date;
+}
+
+/**
+ * Is `other` a twin standing near `me` right now?
+ * - Must be another device, seen within `freshMs`.
+ * - "store" mode: same store. "twins" mode: GPS fixes within maxMeters, or,
+ *   when either side has no GPS (dev mode), the same (dev) store.
+ */
+export function isTwinNearby(
+  me: Omit<PresencePing, "lastSeen">,
+  other: PresencePing,
+  opts: { mode: "twins" | "store"; maxMeters: number; freshMs: number; now: Date },
+): boolean {
+  if (other.deviceId === me.deviceId) return false;
+  if (opts.now.getTime() - other.lastSeen.getTime() > opts.freshMs) return false;
+  if (opts.mode === "store") return other.storeId === me.storeId;
+  if (me.location && other.location && !me.waived && !other.waived) {
+    return haversineMeters(me.location, other.location) <= opts.maxMeters;
+  }
+  return other.storeId === me.storeId;
+}

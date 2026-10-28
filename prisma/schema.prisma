@@ -67,3 +67,18 @@ model Voucher {
   @@unique([syncSessionId, deviceId])
   @@index([deviceId, createdAt])
 }
+
+// Short-lived "this phone has Twin Sync open, here" heartbeats, used to grey
+// out the Twin Sync button until a twin is nearby. Rows older than a few
+// minutes are pruned; other phones only ever see a count, never locations.
+model Presence {
+  deviceId String   @id
+  lat      Float?
+  lng      Float?
+  storeId  String
+  // True when dev mode / NFC stood in for GPS: matched by storeId instead.
+  waived   Boolean  @default(false)
+  lastSeen DateTime
+
+  @@index([lastSeen])
+}

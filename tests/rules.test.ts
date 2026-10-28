@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkJoin, checkRedeem, hasReachedDailyLimit, isExpired, isQrFrameFresh, startOfDayInZone, type ProximityCheck } from "@/lib/rules";
+import { checkJoin, checkRedeem, hasReachedDailyLimit, isExpired, isQrFrameFresh, isTwinNearby, startOfDayInZone, type ProximityCheck } from "@/lib/rules";
 import { findStoreForLocation, haversineMeters } from "@/lib/geo";
 
 const now = new Date("2026-10-28T10:00:00Z");
@@ -122,4 +122,21 @@ describe("geo", () => {
   it("returns null when ~200m away", () => {
     expect(findStoreForLocation({ lat: -26.1947, lng: 28.0305 }, stores)).toBeNull();
   });
+});
+
+describe("isTwinNearby (grey-out until a twin is open nearby)", () => {
+  const here = { lat: -26.2041, lng: 28.0473 };
+  const me = { deviceId: "me", storeId: "s1", location: here, waived: false };
+  const opts = (mode: "twins" | "store" = "twins") => ({ mode, maxMeters: 50, freshMs: 15_000, now });
+  const other = (o: Partial<Parameters<typeof isTwinNearby>[1]> = {}) => ({ deviceId: "them", storeId: "s1", location: here, waived: false, lastSeen: inSecs(-3), ...o });
+
+  it("counts another phone a few metres away", () => expect(isTwinNearby(me, other({ location: { lat: -26.20412, lng: 28.0473 } }), opts())).toBe(true));
+  it("ignores a phone ~400m away", () => expect(isTwinNearby(me, other({ location: { lat: -26.208, lng: 28.0473 } }), opts())).toBe(false));
+  it("ignores a phone whose app was closed >15s ago", () => expect(isTwinNearby(me, other({ lastSeen: inSecs(-16) }), opts())).toBe(false));
+  it("never counts yourself", () => expect(isTwinNearby(me, other({ deviceId: "me" }), opts())).toBe(false));
+  it("matches dev-mode phones (no GPS) by store", () => {
+    expect(isTwinNearby({ ...me, location: null, waived: true }, other({ location: null, waived: true }), opts())).toBe(true);
+    expect(isTwinNearby({ ...me, location: null, waived: true }, other({ location: null, waived: true, storeId: "s2" }), opts())).toBe(false);
+  });
+  it("in store mode, same store is enough", () => expect(isTwinNearby(me, other({ location: { lat: -26.208, lng: 28.0473 } }), opts("store"))).toBe(true));
 });

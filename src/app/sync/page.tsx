@@ -35,7 +35,7 @@ export default function SyncPage() {
 
 function SyncFlow() {
   const params = useSearchParams();
-  const { config, presence } = useApp();
+  const { config, presence, latestProof } = useApp();
   const [mode, setMode] = useState<Mode>(() => {
     // Opened from the QR via the phone's own camera app.
     const q = params.get("q");
@@ -47,7 +47,7 @@ function SyncFlow() {
   });
 
   const usesNfcProof = (mode.kind === "code" && mode.nfc) || (mode.kind === "joining" && mode.cred.nfc);
-  const proof: PresenceProof | null = presence.kind === "ok" ? presence.proof : usesNfcProof ? {} : null;
+  const proof: PresenceProof | null = presence.kind === "ok" ? (latestProof() ?? presence.proof) : usesNfcProof ? {} : null;
   const back = mode.kind === "choose" ? "/" : undefined;
 
   return (
@@ -80,7 +80,8 @@ function SyncFlow() {
 }
 
 function Choose({ onPick }: { onPick: (m: Mode) => void }) {
-  const { config } = useApp();
+  const { config, nearby } = useApp();
+  const twinHere = (nearby ?? 0) > 0;
   const [available, setAvailable] = useState<SyncMethod[]>([]);
   useEffect(() => {
     Promise.all(syncProviders.map(async (p) => ((await p.isAvailable()) ? p.id : null))).then((ids) => setAvailable(ids.filter(Boolean) as SyncMethod[]));
@@ -90,10 +91,16 @@ function Choose({ onPick }: { onPick: (m: Mode) => void }) {
     <>
       <h1 className="text-center font-display text-3xl uppercase">Who&apos;s who?</h1>
       <p className="-mt-2 text-center text-cream/70">Stand together. One of you shows a code, the other scans it.</p>
-      <Button onClick={() => onPick({ kind: "host" })} className="min-h-24 text-2xl">
+      {!twinHere && (
+        <div className="flex items-center gap-3 rounded-2xl bg-coal p-4 text-sm text-cream/80" role="status">
+          <span className="h-2.5 w-2.5 shrink-0 animate-ping rounded-full bg-sun" aria-hidden />
+          {nearby === null ? "Looking for twins nearby…" : "No twin nearby yet. Ask a friend to open this link next to you."}
+        </div>
+      )}
+      <Button disabled={!twinHere} onClick={() => onPick({ kind: "host" })} className="min-h-24 text-2xl">
         📱 Show my code
       </Button>
-      <Button variant="flame" onClick={() => onPick({ kind: "scan" })} className="min-h-24 text-2xl">
+      <Button disabled={!twinHere} variant="flame" onClick={() => onPick({ kind: "scan" })} className="min-h-24 text-2xl">
         📷 Scan twin&apos;s code
       </Button>
       {/* The NFC tag proves the store, not that the twins are together. */}
